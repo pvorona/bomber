@@ -2,6 +2,10 @@ import React, { memo, useState, useEffect, useCallback } from 'react';
 import './App.css';
 import { ws } from './Server'
 
+console.log = function () {}
+
+const opening = {}
+let fetchingMap = false
 
 function App() {
   const [map, setMap] = useState([ [] ])
@@ -9,6 +13,7 @@ function App() {
   const [opened, setOpened] = useState({})
   const [won, setWon] = useState(false)
   const [show, setShow] = useState(true)
+  const [done, setDone] = useState({})
 
   useEffect(() => {
     const effect = async () => {
@@ -17,9 +22,12 @@ function App() {
       await ws.send('map')
       ws.onMessage.addListener(message => {
         console.log(message)
-        window.a = message
+        if (!won) {
+          window.a = message
+        }
         if (message.includes('won')) setWon(true)
         if (message.startsWith('map')) {
+          fetchingMap = false
           if (won) return
           console.log('received new map')
           let [, ...lines] = message.split('\n')
@@ -38,7 +46,7 @@ function App() {
     bombCoords,
   ])
 
-  function getNeighbours (lineIndex, columnIndex) {
+  const getNeighbours = (function getNeighbours (lineIndex, columnIndex) {
     const directions = [
       [-1, -1],
       [-1,  0],
@@ -50,11 +58,12 @@ function App() {
       [ 0, -1],
     ]
 
-    return directions.filter(([i, j]) =>
+    const result = directions.filter(([i, j]) =>
       (lineIndex + i) >= 0 && (lineIndex + i) <= map.length - 1 &&
       (columnIndex + j) >= 0 && (columnIndex + j) <= map[0].length - 1
     ).map(([i, j]) => [lineIndex + i, columnIndex + j])
-  }
+    return result
+  })
 
   function isClosed ([i, j]) {
     return map[i][j] === '□'
@@ -94,6 +103,11 @@ function App() {
   }
 
   function batchOpen (cells) {
+    cells = cells.filter(cell => !opening[cell])
+    Object.assign(opening, cells.reduce((reduced, curr) => ({
+      ...reduced,
+      [[curr]]: true,
+    }), {}))
     const newOpened = cells.reduce((reduced, curr) => ({
       ...reduced,
       [[curr]]: true,
@@ -115,7 +129,10 @@ function App() {
       if (i === 0 && !used) {
         console.log('awaited! fetching map...')
         used = true
-        ws.send('map')
+        if (!fetchingMap) {
+          fetchingMap = true
+          ws.send('map')
+        }
       }
     })
   }
@@ -159,11 +176,17 @@ function App() {
     for (let lineIndex = 0; lineIndex < map.length; lineIndex++) {
       for (let columnIndex = 0; columnIndex < map[0].length; columnIndex++) {
         if (isClosed([lineIndex, columnIndex]) || isDone([lineIndex, columnIndex])) continue
-
         const neighbours = getNeighbours(lineIndex, columnIndex)
         const closedNeighbours = getClosed(neighbours)
 
-        if (closedNeighbours.length === 0) continue
+        const unknownNeighbours = closedNeighbours.filter(cell => !isBomb(cell))
+        if (unknownNeighbours.length === 0) {
+          setDone(done => ({ ...done, [[lineIndex, columnIndex]]: true }))
+        }
+
+        if (closedNeighbours.length === 0) {
+          continue
+        }
 
         const value = Number(map[lineIndex][columnIndex])
 
@@ -184,9 +207,7 @@ function App() {
   }
 
   function isDone([i, j]) {
-    const neighbours = getNeighbours(i, j)
-    const unknownNeighbours = getClosed(neighbours).filter(cell => !isBomb(cell))
-    return unknownNeighbours.length === 0
+    return done[[i, j]]
   }
 
   function isLost () {
@@ -207,24 +228,24 @@ function App() {
 
   return (
     <>
-    <button onClick={() => setShow(!show)}>Show</button>
-    {map.map((line, lineIndex) =>
-      <div className="Row" key={lineIndex}>
-        {line.map((point, columnIndex) =>
-          <Cell
-            key={[lineIndex, columnIndex]}
-            lineIndex={lineIndex}
-            columnIndex={columnIndex}
-            isBomb={bombCoords[[lineIndex, columnIndex]]}
-            isOpened={isOpened([lineIndex, columnIndex])}
-            isClosed={isClosed([lineIndex, columnIndex])}
-            isDone={isDone([lineIndex, columnIndex])}
-            point={point}
-            onClick={onClick}
-          />
-        )}
-      </div>
-    )}
+      <button onClick={() => setShow(!show)}>Show</button>
+      {map.map((line, lineIndex) =>
+        <div className="Row" key={lineIndex}>
+          {line.map((point, columnIndex) =>
+            <Cell
+              key={[lineIndex, columnIndex]}
+              lineIndex={lineIndex}
+              columnIndex={columnIndex}
+              isBomb={bombCoords[[lineIndex, columnIndex]]}
+              isOpened={isOpened([lineIndex, columnIndex])}
+              isClosed={isClosed([lineIndex, columnIndex])}
+              isDone={isDone([lineIndex, columnIndex])}
+              point={point}
+              onClick={onClick}
+            />
+          )}
+        </div>
+      )}
     </>
   )
 }

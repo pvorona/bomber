@@ -31,7 +31,16 @@ body {
 }
 
 .Loading {
-  background-color: orange;
+  animation: loading infinite .5s alternate;
+}
+
+@keyframes loading {
+  from {
+    background-color: #ffc107;
+  }
+  to {
+    background-color: orange;
+  }
 }
 
 .Done {
